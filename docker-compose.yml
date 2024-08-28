@@ -1,0 +1,103 @@
+version: '3.7'
+
+services:
+
+  traefik:
+    image: traefik:v2.5
+    restart: unless-stopped
+    command:
+      - --api.insecure=true
+      - --providers.docker
+      - --providers.file.filename=/traefik_dynamic.yml  # Reference the dynamic config file
+      - --experimental.plugins.jwt.modulename=github.com/Brainnwave/jwt-middleware
+      - --experimental.plugins.jwt.version=v1.2.1
+    ports:
+      - "80:80"
+      - "8080:8080"
+    networks:
+      - clowder2
+    volumes:
+      # So that Traefik can listen to the Docker events
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./traefik_dynamic.yml:/traefik_dynamic.yml:ro
+    labels:
+      # Define the JWT middleware here
+      - "traefik.http.middlewares.jwt-auth.plugin.jwt.secret=-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3aG3Hl7N4mkgg1Jx8ojD9pj/X42//JFQ0XNceBaRMA1eGU78pHkHtuhsSEBFjvBLUfIXrwNfyesovFgM5I5trMUK/hs9vkQg+xVRcWFe5x1q4jcbuvbhYerRbYAQG/krQYS2k94idiUYC3pGDzUGIvBHV4joCxiG19qcdWAcxJZ7+Uh7ZXmD5Qf9yfsq0zzcHWjgGgWUvfhq1Ij3ynuDP4060graK/eFC1r/9khgAzaFZKY5zhWrVPxaTi4Sf4T4foIcoeTWWMorcPu/ZXHbVjLtyiNyc3JW6XfGzRx/wD22eVoy7xy3v43OpIKS5DK5BSnT0jujlPIU1sgwVviH2QIDAQAB\n-----END PUBLIC KEY-----"
+      - "traefik.http.middlewares.jwt-auth.plugin.jwt.algorithm=RS256"
+      - "traefik.http.middlewares.jwt-auth.plugin.jwt.authHeader=true"
+      - "traefik.http.middlewares.jwt-auth.plugin.jwt.authHeaderPrefix=Bearer"
+
+  geoserver:
+    image: docker.osgeo.org/geoserver:2.23.0
+    environment:
+      JAVA_OPTS: -Xmx1536M -XX:MaxPermSize=756M
+      CORS_ENABLED: true
+      CORS_ALLOWED_ORIGINS: "*"
+      CORS_ALLOWED_METHODS: "GET,POST,PUT,DELETE,HEAD,OPTIONS"
+      CORS_ALLOWED_HEADERS: "*"
+    ports:
+      - "80:8080"
+    networks:
+      - clowder2
+    restart: unless-stopped
+    volumes:
+      - geoserver_data:/opt/geoserver_data
+      - geoserver_exts:/opt/additional_libs
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.geoserver.middlewares=jwt-auth"
+      - "traefik.http.routers.geoserver.rule=PathPrefix(`/geoserver`)"
+      - "traefik.http.routers.geoserver.middlewares=secure-api@file"
+      - "traefik.http.routers.backend.priority=6"
+      - "traefik.http.services.geoserver.loadbalancer.server.port=8080"  # Internal port in the container
+
+  postgres:
+    image: postgres
+    restart: unless-stopped
+    networks:
+      - clowder2
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: keycloak_prod
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: password
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:20.0
+    restart: unless-stopped
+    networks:
+      - clowder2
+    volumes:
+      - ./keycloak/clowder-realm-prod.json:/opt/keycloak/data/import/realm.json:ro
+      - ./keycloak/clowder-theme/:/opt/keycloak/themes/clowder-theme/:ro
+    command:
+      - start-dev
+      - --http-relative-path /keycloak
+      - --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL_HOST: postgres
+      KC_DB_URL_DATABASE: keycloak_prod
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: password
+    depends_on:
+      - postgres
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.keycloak.rule=PathPrefix(`/keycloak`)"
+      - "traefik.http.services.keycloak.loadbalancer.server.port=8080"
+      - "traefik.http.routers.keycloak.priority=10"
+
+## By default this config uses default local driver,
+## For custom volumes replace with volume driver configuration.
+volumes:
+  postgres_data:
+  elasticsearch:
+  geoserver_data:
+  geoserver_exts:
+
+networks:
+  clowder2:
