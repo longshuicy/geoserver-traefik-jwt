@@ -5,10 +5,10 @@ http:
     secure-api:
       plugin:
         jwt:
-          secret: |
-            -----BEGIN EC PUBLIC KEY-----
-            MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEE7gFCo/g2PQmC3i5kIqVgCCzr2D1
-            nbCeipqfvK1rkqmKfhb7rlVehfC7ITUAy8NIvQ/AsXClvgHDv55BfOoL6w==
-            -----END EC PUBLIC KEY-----
-          require:
-            aud: test.example.com
+          issuers:
+            - http://localhost/keycloak/realms/dachub
+#          Alternatively can try static public key
+#          secret: |
+#            -----BEGIN RSA PUBLIC KEY-----
+#            {static RSA public key}
+#            -----END RSA PUBLIC KEY-----
